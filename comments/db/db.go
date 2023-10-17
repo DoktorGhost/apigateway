@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"time"
 
 	_ "github.com/lib/pq"
 )
@@ -23,18 +24,35 @@ func InitDB() *sql.DB {
 		"password=%s dbname=%s sslmode=disable",
 		Host, Port, User, Password, DBName)
 
-	db, err := sql.Open("postgres", psqlInfo)
-	if err != nil {
-		log.Fatal(err)
+	var db *sql.DB
+	var err error
+
+	maxRetries := 5                  // Максимальное количество попыток соединения
+	retryInterval := 5 * time.Second // Интервал между попытками
+
+	for retries := 0; retries < maxRetries; retries++ {
+		db, err = sql.Open("postgres", psqlInfo)
+		if err != nil {
+			log.Printf("Failed to open database connection: %v", err)
+			time.Sleep(retryInterval) // Подождите перед следующей попыткой
+			continue
+		}
+
+		err = db.Ping()
+		if err != nil {
+			log.Printf("Failed to ping database: %v", err)
+			db.Close() // Закройте соединение перед следующей попыткой
+			time.Sleep(retryInterval)
+			continue
+		}
+
+		// Успешное соединение
+		DB = db
+		return DB
 	}
 
-	err = db.Ping()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	DB = db
-	return DB
+	log.Printf("Exhausted all connection retries, giving up.")
+	return nil
 }
 
 func ExecuteSchemaSQL(db *sql.DB) {
